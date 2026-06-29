@@ -1,22 +1,28 @@
 from flask import Flask, request, jsonify
 import requests
-import urllib.parse
 import datetime
 
 app = Flask(__name__)
 
-# CallMeBot setup
-CALLMEBOT_APIKEY = "YOUR_API_KEY"
-ADMIN_PHONE = "+233543393207"  # Old number
+# UltraMsg API
+ULTRAMSG_TOKEN = "okrceou36xa6at6d"
+ULTRAMSG_INSTANCE = "instance183035"
+ADMIN_PHONE = "971543393207"  # No + sign
 
 bookings = {}
 
 def send_whatsapp(phone, message):
-    encoded = urllib.parse.quote(message)
-    url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded}&apikey={CALLMEBOT_APIKEY}"
+    url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE}/messages/chat"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {
+        "token": ULTRAMSG_TOKEN,
+        "to": phone,
+        "body": message,
+        "priority": "1"
+    }
     try:
-        r = requests.get(url, timeout=30)
-        return {"sent": "Message queued" in r.text or r.status_code == 200, "response": r.text[:100]}
+        r = requests.post(url, data=data, timeout=30)
+        return {"sent": r.status_code == 200, "response": r.text[:100]}
     except Exception as e:
         return {"sent": False, "error": str(e)}
 
@@ -39,11 +45,12 @@ def book():
     }
     
     # Send to customer
-    customer_msg = f"✅ Booking Confirmed!\\n\\nID: {booking_id}\\nName: {data['name']}\\nService: {data['service']}\\nDate: {data['date']}\\nTime: {data['time']}\\n\\nSee you at Hair by Pannu! 💈"
-    customer_result = send_whatsapp(data['phone'], customer_msg)
+    customer_phone = data['phone'].replace("+", "")
+    customer_msg = f"✅ Booking Confirmed!\n\nID: {booking_id}\nName: {data['name']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}\n\nSee you at Hair by Pannu! 💈"
+    customer_result = send_whatsapp(customer_phone, customer_msg)
     
-    # Send to admin (old number)
-    admin_msg = f"📋 New Booking\\n\\nID: {booking_id}\\nName: {data['name']}\\nPhone: {data['phone']}\\nService: {data['service']}\\nDate: {data['date']}\\nTime: {data['time']}"
+    # Send to admin
+    admin_msg = f"📋 New Booking\n\nID: {booking_id}\nName: {data['name']}\nPhone: {data['phone']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}"
     admin_result = send_whatsapp(ADMIN_PHONE, admin_msg)
     
     return jsonify({
