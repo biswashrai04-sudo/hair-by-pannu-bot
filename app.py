@@ -15,7 +15,7 @@ def send_whatsapp(phone, message):
     url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded}&apikey={CALLMEBOT_APIKEY}"
     try:
         r = requests.get(url, timeout=30)
-        return {"sent": "Message queued" in r.text or r.status_code == 200}
+        return {"sent": "Message queued" in r.text or r.status_code == 200, "response": r.text}
     except Exception as e:
         return {"sent": False, "error": str(e)}
 
@@ -27,6 +27,7 @@ def home():
 def book():
     data = request.json
     booking_id = f"BP{datetime.datetime.now().strftime('%H%M%S')}"
+    
     bookings[booking_id] = {
         "name": data['name'],
         "phone": data['phone'],
@@ -35,19 +36,16 @@ def book():
         "time": data['time'],
         "status": "confirmed"
     }
-    send_whatsapp(data['phone'], f"✅ *Booking Confirmed*\n\nID: {booking_id}\nName: {data['name']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}\n\nSee you at Hair by Pannu! 💈")
-    send_whatsapp(ADMIN_PHONE, f"📋 *New Booking*\n\nID: {booking_id}\nName: {data['name']}\nPhone: {data['phone']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}")
-    return jsonify({"success": True, "booking_id": booking_id})
-
-@app.route("/cancel/<booking_id>", methods=['POST'])
-def cancel(booking_id):
-    if booking_id not in bookings:
-        return jsonify({"success": False, "error": "Not found"})
-    booking = bookings[booking_id]
-    booking['status'] = "cancelled"
-    send_whatsapp(booking['phone'], f"❌ Booking {booking_id} cancelled.")
-    send_whatsapp(ADMIN_PHONE, f"❌ Booking {booking_id} cancelled by {booking['name']}")
-    return jsonify({"success": True})
+    
+    customer_result = send_whatsapp(data['phone'], f"✅ Booking Confirmed! ID: {booking_id}")
+    admin_result = send_whatsapp(ADMIN_PHONE, f"📋 New Booking: {booking_id} - {data['name']}")
+    
+    return jsonify({
+        "success": True,
+        "booking_id": booking_id,
+        "whatsapp_customer": customer_result,
+        "whatsapp_admin": admin_result
+    })
 
 @app.route("/bookings", methods=['GET'])
 def list_bookings():
