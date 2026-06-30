@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 import datetime
 import os
+import traceback
 
 app = Flask(__name__)
 
@@ -23,12 +24,17 @@ def send_whatsapp(phone, message):
     }
     try:
         r = requests.post(url, data=data, timeout=30)
+        print(f"UltraMsg response: {r.status_code} - {r.text[:100]}")
         return {"sent": r.status_code == 200, "response": r.text[:100]}
     except Exception as e:
+        print(f"UltraMsg error: {e}")
         return {"sent": False, "error": str(e)}
 
 def ai_response(customer_message, phone):
     try:
+        print(f"AI processing: {customer_message[:50]}")
+        print(f"Key set: {bool(OPENROUTER_API_KEY)}")
+        
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
@@ -98,12 +104,16 @@ CONSTRAINTS:
             "max_tokens": 300
         }
         
+        print(f"Calling OpenRouter...")
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=data,
             timeout=30
         )
+        
+        print(f"OpenRouter status: {r.status_code}")
+        print(f"OpenRouter response: {r.text[:200]}")
         
         result = r.json()
         reply = result['choices'][0]['message']['content']
@@ -118,19 +128,27 @@ CONSTRAINTS:
         
     except Exception as e:
         print(f"AI Error: {e}")
+        traceback.print_exc()
         return "Hi! Thank you for contacting Hair by Pannu. I am her digital assistant. What is your name please?"
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
+    print("=== WEBHOOK HIT ===")
     data = request.form
     phone = data.get('from', '').replace("@c.us", "")
     text = data.get('body', '').strip()
     
+    print(f"From: {phone}, Body: {text}")
+    
     if not phone or not text:
+        print("Empty phone or text")
         return "OK", 200
     
     reply = ai_response(text, phone)
-    send_whatsapp(phone, reply)
+    print(f"AI Reply: {reply[:100]}")
+    
+    result = send_whatsapp(phone, reply)
+    print(f"WhatsApp result: {result}")
     
     if "Here is your summary:" in reply:
         send_whatsapp(ADMIN_PHONE, f"New booking from {phone}:\n\n{reply}")
