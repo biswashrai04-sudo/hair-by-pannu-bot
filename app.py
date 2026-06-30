@@ -206,3 +206,34 @@ def debug():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
+
+@app.route("/test-ai")
+def test_ai():
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://pannu-bot.onrender.com",
+            "X-Title": "Hair by Pannu Bot"
+        }
+        
+        data = {
+            "model": "openai/gpt-4o-mini",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "temperature": 0.7,
+            "max_tokens": 50
+        }
+        
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        return jsonify({
+            "status": r.status_code,
+            "response": r.json()['choices'][0]['message']['content'] if r.status_code == 200 else r.text
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
