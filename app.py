@@ -123,22 +123,20 @@ CONSTRAINTS:
 @app.route("/webhook", methods=['POST'])
 def webhook():
     print("=== WEBHOOK HIT ===")
-    print(f"Headers: {dict(request.headers)}")
-    print(f"Form: {dict(request.form)}")
-    print(f"JSON: {request.get_json(silent=True)}")
-    print(f"Data: {request.get_data(as_text=True)}")
     
-    # Try to get data from multiple sources
-    data = request.form
-    if not data:
-        json_data = request.get_json(silent=True)
-        if json_data:
-            data = json_data
+    # Get JSON data
+    data = request.get_json(silent=True) or {}
     
-    phone = data.get('from', '').replace("@c.us", "") if hasattr(data, 'get') else ''
-    text = data.get('body', '').strip() if hasattr(data, 'get') else ''
+    print(f"Full data: {data}")
     
-    print(f"From: {phone}, Body: {text}")
+    # UltraMsg sends data nested under 'data' key
+    message_data = data.get('data', {})
+    
+    phone = message_data.get('from', '').replace("@c.us", "")
+    text = message_data.get('body', '').strip()
+    pushname = message_data.get('pushname', '')
+    
+    print(f"From: {phone}, Body: {text}, Name: {pushname}")
     
     if not phone or not text:
         print("Empty phone or text")
@@ -151,7 +149,7 @@ def webhook():
     print(f"WhatsApp result: {result}")
     
     if "Here is your summary:" in reply:
-        send_whatsapp(ADMIN_PHONE, f"New booking from {phone}:\n\n{reply}")
+        send_whatsapp(ADMIN_PHONE, f"New booking from {phone} ({pushname}):\n\n{reply}")
     
     return "OK", 200
 
