@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify
 import requests
 import datetime
 import os
-import traceback
 
 app = Flask(__name__)
 
@@ -24,17 +23,12 @@ def send_whatsapp(phone, message):
     }
     try:
         r = requests.post(url, data=data, timeout=30)
-        print(f"UltraMsg response: {r.status_code} - {r.text[:100]}")
         return {"sent": r.status_code == 200, "response": r.text[:100]}
     except Exception as e:
-        print(f"UltraMsg error: {e}")
         return {"sent": False, "error": str(e)}
 
 def ai_response(customer_message, phone):
     try:
-        print(f"AI processing: {customer_message[:50]}")
-        print(f"Key set: {bool(OPENROUTER_API_KEY)}")
-        
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
@@ -104,16 +98,12 @@ CONSTRAINTS:
             "max_tokens": 300
         }
         
-        print(f"Calling OpenRouter...")
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers=headers,
             json=data,
             timeout=30
         )
-        
-        print(f"OpenRouter status: {r.status_code}")
-        print(f"OpenRouter response: {r.text[:200]}")
         
         result = r.json()
         reply = result['choices'][0]['message']['content']
@@ -128,15 +118,25 @@ CONSTRAINTS:
         
     except Exception as e:
         print(f"AI Error: {e}")
-        traceback.print_exc()
         return "Hi! Thank you for contacting Hair by Pannu. I am her digital assistant. What is your name please?"
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
     print("=== WEBHOOK HIT ===")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Form: {dict(request.form)}")
+    print(f"JSON: {request.get_json(silent=True)}")
+    print(f"Data: {request.get_data(as_text=True)}")
+    
+    # Try to get data from multiple sources
     data = request.form
-    phone = data.get('from', '').replace("@c.us", "")
-    text = data.get('body', '').strip()
+    if not data:
+        json_data = request.get_json(silent=True)
+        if json_data:
+            data = json_data
+    
+    phone = data.get('from', '').replace("@c.us", "") if hasattr(data, 'get') else ''
+    text = data.get('body', '').strip() if hasattr(data, 'get') else ''
     
     print(f"From: {phone}, Body: {text}")
     
@@ -204,9 +204,6 @@ def debug():
         "ultramsg_instance": ULTRAMSG_INSTANCE
     })
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
-
 @app.route("/test-ai")
 def test_ai():
     try:
@@ -240,7 +237,6 @@ def test_ai():
 
 @app.route("/test-webhook")
 def test_webhook():
-    # Simulate what webhook does
     phone = "971501234567"
     text = "Hi"
     
@@ -259,3 +255,6 @@ def ping():
         "time": str(datetime.datetime.now()),
         "webhook_url": "https://pannu-bot.onrender.com/webhook"
     })
+
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=5000)
