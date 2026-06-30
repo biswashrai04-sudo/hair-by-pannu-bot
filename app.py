@@ -237,3 +237,17 @@ def test_ai():
         })
     except Exception as e:
         return jsonify({"error": str(e)})
+
+@app.route("/test-webhook")
+def test_webhook():
+    # Simulate what webhook does
+    phone = "971501234567"
+    text = "Hi"
+    
+    reply = ai_response(text, phone)
+    result = send_whatsapp(phone, reply)
+    
+    return jsonify({
+        "ai_reply": reply,
+        "whatsapp_result": result
+    })
