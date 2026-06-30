@@ -251,3 +251,11 @@ def test_webhook():
         "ai_reply": reply,
         "whatsapp_result": result
     })
+
+@app.route("/ping")
+def ping():
+    return jsonify({
+        "status": "alive",
+        "time": str(datetime.datetime.now()),
+        "webhook_url": "https://pannu-bot.onrender.com/webhook"
+    })
