@@ -1,17 +1,17 @@
 from flask import Flask, request, jsonify
 import requests
 import datetime
-import threading
-import time
+import os
 
 app = Flask(__name__)
 
 ULTRAMSG_TOKEN = "okrceou36xa6at6d"
 ULTRAMSG_INSTANCE = "instance183035"
 ADMIN_PHONE = "971543393207"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 bookings = {}
-sessions = {}  # Track user sessions
+sessions = {}
 
 def send_whatsapp(phone, message):
     url = f"https://api.ultramsg.com/{ULTRAMSG_INSTANCE}/messages/chat"
@@ -27,66 +27,122 @@ def send_whatsapp(phone, message):
     except Exception as e:
         return {"sent": False, "error": str(e)}
 
-def welcome_message(phone):
-    """Send welcome message"""
-    msg = (
-        "👋 *Hello! Welcome to Hair by Pannu!*\n\n"
-        "How are you today? 😊\n\n"
-        "How can I help you?\n\n"
-        "💈 *Our Services:*\n"
-        "• Haircut\n"
-        "• Hair Coloring\n"
-        "• Hair Treatment\n"
-        "• Styling\n\n"
-        "📅 *To book, just tell me:*\n"
-        "• Your name\n"
-        "• Service you want\n"
-        "• Preferred date & time\n\n"
-        "Example: _Hi, I'm John. I want a haircut on July 5th at 2pm_"
-    )
-    send_whatsapp(phone, msg)
+def ai_response(customer_message, phone):
+    try:
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://pannu-bot.onrender.com",
+            "X-Title": "Hair by Pannu Bot"
+        }
+        
+        history = sessions.get(phone, [])
+        
+        messages = [
+            {
+                "role": "system",
+                "content": """You are Pannu's AI Assistant for "Hair by Pannu". Warm, casual, professional tone. No emojis. Short responses (1-2 sentences max).
+
+FLOW:
+1. Greeting: "Hi! Thank you for contacting Hair by Pannu. I am her digital assistant. What is your name please?"
+2. After name: "Thank you for reaching out, [Name]. How can I help you today?"
+   Then show options:
+   A) Services & Prices
+   B) Book an Appointment
+3. If A: Show price list briefly
+   If B: Start booking flow
+
+PRICE LIST:
+- Haircut: 50 AED
+- Blow Dry: 80 AED  
+- Color: 150 AED
+- Treatment: 100 AED
+- Styling: 80 AED
+*Note: Final pricing varies by hair length and density.*
+
+BOOKING FLOW (one question at a time):
+1. "What service are we looking to book today? (You can reply with just a keyword, like Blow Dry, Haircut, or Color)."
+2. "Great. What date or day works best for you?"
+3. "Perfect. Do you prefer morning, afternoon, evening, or a specific time (AM/PM)?"
+4. "Got it. This is a premium mobile service—what is your estimated area or location in Abu Dhabi?"
+
+AFTER ALL DETAILS:
+"Thank you! Silent will check Pannu's schedule right now and we will get back to you quickly to confirm your slot.
+
+Here is your summary:
+*Name:* [Client Name]
+*Service:* [Full Service Name]
+*Date:* [Date]
+*Time:* [Time/Window]
+*Location:* [Location]
+
+Thank you for choosing Hair by Pannu. Have a nice time."
+
+CONSTRAINTS:
+- No emojis
+- Never ask two questions at once
+- Use asterisks (*) for bold text
+- Keep it casual and warm"""
+            }
+        ]
+        
+        for msg in history:
+            messages.append(msg)
+        
+        messages.append({"role": "user", "content": customer_message})
+        
+        data = {
+            "model": "openai/gpt-4o-mini",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 300
+        }
+        
+        r = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=data,
+            timeout=30
+        )
+        
+        result = r.json()
+        reply = result['choices'][0]['message']['content']
+        
+        if phone not in sessions:
+            sessions[phone] = []
+        sessions[phone].append({"role": "user", "content": customer_message})
+        sessions[phone].append({"role": "assistant", "content": reply})
+        sessions[phone] = sessions[phone][-12:]
+        
+        return reply
+        
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return "Hi! Thank you for contacting Hair by Pannu. I am her digital assistant. What is your name please?"
 
 @app.route("/webhook", methods=['POST'])
 def webhook():
-    """Receive incoming WhatsApp messages"""
     data = request.form
-    
-    # UltraMsg sends these fields
     phone = data.get('from', '').replace("@c.us", "")
     text = data.get('body', '').strip()
     
     if not phone or not text:
         return "OK", 200
     
-    # New user or any message → send welcome
-    if phone not in sessions:
-        sessions[phone] = {'step': 'welcome'}
-        welcome_message(phone)
-        return "OK", 200
+    reply = ai_response(text, phone)
+    send_whatsapp(phone, reply)
     
-    # Existing user sent another message
-    if sessions[phone]['step'] == 'welcome':
-        # Try to parse as booking
-        # For now, just welcome again
-        welcome_message(phone)
+    if "Here is your summary:" in reply:
+        send_whatsapp(ADMIN_PHONE, f"New booking from {phone}:\n\n{reply}")
     
     return "OK", 200
 
 @app.route("/")
 def home():
-    return "Hair by Pannu Bot is running!"
-
-@app.route("/welcome", methods=['POST'])
-def manual_welcome():
-    """Manually send welcome"""
-    data = request.json
-    phone = data['phone'].replace("+", "")
-    welcome_message(phone)
-    return jsonify({"success": True})
+    return "Hair by Pannu AI Bot is running!"
 
 @app.route("/book", methods=['POST'])
 def book():
-    """Structured booking from Flutter"""
     data = request.json
     booking_id = f"BP{datetime.datetime.now().strftime('%H%M%S')}"
     
@@ -100,10 +156,10 @@ def book():
     }
     
     customer_phone = data['phone'].replace("+", "")
-    customer_msg = f"✅ *Booking Confirmed!*\n\nID: {booking_id}\nName: {data['name']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}\n\nSee you at Hair by Pannu! 💈"
+    customer_msg = f"Thank you! Silent will check Pannu's schedule right now and we will get back to you quickly to confirm your slot.\n\n*Name:* {data['name']}\n*Service:* {data['service']}\n*Date:* {data['date']}\n*Time:* {data['time']}\n\nThank you for choosing Hair by Pannu. Have a nice time."
     send_whatsapp(customer_phone, customer_msg)
     
-    admin_msg = f"📋 *New Booking*\n\nID: {booking_id}\nName: {data['name']}\nPhone: {data['phone']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}"
+    admin_msg = f"New Booking: {booking_id}\nName: {data['name']}\nPhone: {data['phone']}\nService: {data['service']}\nDate: {data['date']}\nTime: {data['time']}"
     send_whatsapp(ADMIN_PHONE, admin_msg)
     
     return jsonify({"success": True, "booking_id": booking_id})
@@ -114,10 +170,21 @@ def list_bookings():
 
 @app.route("/admin")
 def admin():
-    html = "<h1>📋 Hair by Pannu - Bookings</h1>"
+    html = "<h1>Hair by Pannu - Bookings</h1>"
     for id, b in bookings.items():
         html += f"<p><b>{id}</b>: {b['name']} | {b['service']} | {b['date']} {b['time']} | {b['phone']}</p>"
     return html
+
+@app.route("/debug")
+def debug():
+    key_set = "YES" if OPENROUTER_API_KEY else "NO"
+    key_preview = OPENROUTER_API_KEY[:10] + "..." if OPENROUTER_API_KEY else "EMPTY"
+    return jsonify({
+        "openrouter_key_set": key_set,
+        "key_preview": key_preview,
+        "admin_phone": ADMIN_PHONE,
+        "ultramsg_instance": ULTRAMSG_INSTANCE
+    })
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
