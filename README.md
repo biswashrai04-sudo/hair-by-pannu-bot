@@ -1,73 +1,39 @@
-# Hair by Pannu — WhatsApp Booking Bot
+# 💇 Hair by Pannu - WhatsApp Booking Bot
 
-An AI-powered WhatsApp assistant for **Hair by Pannu**, a premium mobile hair salon in Abu Dhabi. Customers message the salon's WhatsApp number, and the bot handles greetings, service & pricing questions, and appointment booking — then notifies the admin when a booking is confirmed.
+> An automated, production-grade conversational booking system powering door-to-door salon appointments across Abu Dhabi, UAE.
 
-## How it works
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Flask](https://img.shields.io/badge/Flask-3.0.3-black.svg)](https://palletsprojects.com/p/flask/)
+[![Twilio](https://img.shields.io/badge/Twilio-WhatsApp%20API-red.svg)](https://www.twilio.com/)
+[![SQLite](https://img.shields.io/badge/Database-SQLite3-003B57.svg)](https://www.sqlite.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-```
-Customer WhatsApp message
-        │
-        ▼
-  UltraMsg webhook  →  Flask app (/webhook)
-        │
-        ▼
-  GPT-4o-mini (via OpenRouter) — conversational flow:
-    greet → ask name → services/pricing or booking flow → confirm
-        │
-        ▼
-  Reply sent back via UltraMsg  +  admin notified on confirmed booking
-```
+---
 
-- **Framework:** Flask
-- **WhatsApp API:** [UltraMsg](https://ultramsg.com/)
-- **AI model:** GPT-4o-mini via [OpenRouter](https://openrouter.ai/)
-- **Hosting:** Render
+## 📖 Overview
 
-## Features
+**Hair by Pannu Bot** is a complete conversational WhatsApp bot designed specifically for a premium mobile hair styling business in Abu Dhabi. It orchestrates a friction-free customer journey: presenting real-time service catalogs, booking appointments with custom scheduling, capturing location data (villas/islands), and persisting confirmed appointments to an indexed relational database.
 
-- Natural-language greeting and service/price lookup (full price list for blow dry, haircuts, styling, treatments, coloring)
-- Guided, one-question-at-a-time booking flow (service → date → time → location)
-- Per-customer conversation memory (last 12 messages) so the bot keeps context
-- Admin WhatsApp notification on every confirmed booking
-- Simple `/book` REST endpoint and `/bookings` + `/admin` views for manual bookings and a lightweight dashboard
+---
 
-## Setup
+## 🏛️ System Architecture
 
-1. Clone the repo and install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Copy `.env.example` to `.env` and fill in your keys (see below).
-3. Run locally:
-   ```bash
-   python app.py
-   ```
-4. Point your UltraMsg instance's webhook at `https://<your-deployed-url>/webhook`.
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as Customer (WhatsApp)
+    participant Twilio as Twilio WhatsApp Gateway
+    participant Webhook as Flask Webhook (/webhook)
+    participant State as State Machine Engine
+    participant DB as SQLite (salon_bot.db)
 
-### Environment variables
-
-| Variable | Description |
-|---|---|
-| `ULTRAMSG_TOKEN` | API token from your UltraMsg instance |
-| `ULTRAMSG_INSTANCE` | Your UltraMsg instance ID |
-| `ADMIN_PHONE` | WhatsApp number (with country code, no `+`) to receive booking alerts |
-| `OPENROUTER_API_KEY` | API key from [OpenRouter](https://openrouter.ai/) |
-
-## Testing
-
-`test_bot.sh` runs a smoke test against a deployed instance (bot alive check, webhook, booking creation, bookings list, admin dashboard):
-
-```bash
-./test_bot.sh
-```
-
-Update the base URL and any placeholder phone number in the script to match your own deployment before running.
-
-## Notes / known limitations
-
-- Bookings and chat sessions are currently stored **in memory** (a Python dict) — they reset on every restart or redeploy. This is fine for a demo/MVP; a production version would move this to a database (e.g. SQLite/Postgres).
-- No authentication on `/admin` or `/bookings` — add access control before exposing this publicly at scale.
-
-## License
-
-MIT
+    Client->>Twilio: Sends "Hi" or "Book"
+    Twilio->>Webhook: POST application/x-www-form-urlencoded
+    Webhook->>State: Evaluate input & load session
+    State->>DB: Query active user state
+    DB-->>State: Current step (e.g. SELECT_SERVICE)
+    State->>State: Advance state machine & build reply
+    State->>DB: Upsert session state / write booking
+    State-->>Webhook: Return WhatsApp formatted message
+    Webhook-->>Twilio: 200 OK (TwiML XML response)
+    Twilio-->>Client: Delivers formatted WhatsApp message
